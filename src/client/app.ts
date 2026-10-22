@@ -1,45 +1,5 @@
-// ---- ATIF types (only the fields the viewer reads; everything is optional to tolerate variants) ----
-
-interface ToolCall {
-  tool_call_id?: string;
-  function_name?: string;
-  arguments?: unknown;
-}
-
-interface ObservationResult {
-  source_call_id?: string | null;
-  content?: unknown;
-}
-
-interface Step {
-  step_id?: number;
-  timestamp?: string;
-  source?: string;
-  model_name?: string;
-  message?: unknown;
-  reasoning_content?: unknown;
-  tool_calls?: ToolCall[];
-  observation?: { results?: ObservationResult[] };
-  metrics?: { prompt_tokens?: number; completion_tokens?: number; cached_tokens?: number; cost_usd?: number };
-  error?: unknown;
-  extra?: Record<string, unknown>;
-}
-
-interface Trajectory {
-  schema_version?: string;
-  session_id?: string;
-  task_name?: string;
-  agent?: { name?: string; version?: string; model_name?: string; extra?: Record<string, unknown> };
-  steps?: Step[];
-  final_metrics?: {
-    total_prompt_tokens?: number;
-    total_completion_tokens?: number;
-    total_cached_tokens?: number;
-    total_cost_usd?: number;
-    total_steps?: number;
-  };
-  extra?: Record<string, unknown>;
-}
+import { normalize } from "./formats.js";
+import type { Step, ToolCall, Trajectory } from "./types.js";
 
 type Kind = "user" | "done" | "error" | "warn" | "plain";
 type Filter = "all" | "issues" | "errors" | "warnings";
@@ -51,6 +11,7 @@ interface ViewStep {
   isError: boolean;
   isWarning: boolean;
   isComplete: boolean;
+  labels: { error: string; warning: string; complete: string };
   preview: string;
   haystack: string; // lowercased text used for search
 }
@@ -106,8 +67,9 @@ function toText(v: unknown): string {
 
 // ---- Trajectory analysis ----
 
-const ERROR_RE = /previous response had parsing errors|^\s*ERROR:/im;
-const WARNING_RE = /previous response had warnings|^\s*WARNINGS?:/im;
+// terminus-style feedback the harness sends back after a malformed response
+const ERROR_RE = /previous response had parsing errors/i;
+const WARNING_RE = /previous response had warnings/i;
 
 function isCompleteCall(c: ToolCall): boolean {
   if (/task_complete|mark_complete|^(submit|finish)$/i.test(c.function_name ?? "")) return true;
@@ -123,9 +85,15 @@ function analyze(traj: Trajectory): ViewStep[] {
   return (traj.steps ?? []).map((step, index) => {
     const obs = observationText(step);
     const isAgent = step.source === "agent";
-    const isError = step.error != null || (isAgent && ERROR_RE.test(obs));
-    const isWarning = !isError && isAgent && WARNING_RE.test(obs);
-    const isComplete = (step.tool_calls ?? []).some(isCompleteCall);
+    const f = step.flags;
+    const isError = f ? !!f.error : step.error != null || (isAgent && ERROR_RE.test(obs));
+    const isWarning = !isError && (f ? !!f.warning : isAgent && WARNING_RE.test(obs));
+    const isComplete = f ? !!f.complete : (step.tool_calls ?? []).some(isCompleteCall);
+    const labels = {
+      error: f?.error ?? (step.error != null ? "error" : "parse error"),
+      warning: f?.warning ?? "warning",
+      complete: f?.complete ?? "task complete",
+    };
     const message = toText(step.message);
     const kind: Kind =
       step.source === "user" ? "user" : isError ? "error" : isWarning ? "warn" : isComplete ? "done" : "plain";
@@ -137,6 +105,7 @@ function analyze(traj: Trajectory): ViewStep[] {
       isError,
       isWarning,
       isComplete,
+      labels,
       preview: message.replace(/\s+/g, " ").trim() || (calls ? calls.replace(/\s+/g, " ") : "(no message)"),
       haystack: [message, toText(step.reasoning_content), calls, obs].join("\n").toLowerCase(),
     };
@@ -274,13 +243,14 @@ async function loadFromHash(): Promise<void> {
   }
   const res = await fetch(`/api/trajectories/${encodeURIComponent(name)}`);
   if (!res.ok) return showError(`Could not load ${name}.`);
-  let traj: Trajectory;
+  let raw: unknown;
   try {
-    traj = await res.json();
+    raw = await res.json();
   } catch {
     return showError(`${name} is not valid JSON.`);
   }
-  if (!traj || !Array.isArray(traj.steps)) return showError(`${name} has no "steps" array — is it an ATIF trajectory?`);
+  const traj = normalize(raw);
+  if (!traj) return showError(`${name} isn't a recognised trajectory (expected ATIF "steps" or a chat log with "messages").`);
   state.traj = traj;
   state.steps = analyze(traj);
   state.open.clear();
@@ -318,6 +288,7 @@ function renderTrajectory(): void {
     ["Cached tok", fmt(fm.total_cached_tokens ?? sumMetric(traj, "cached_tokens"))],
     ["Completion tok", fmt(fm.total_completion_tokens ?? sumMetric(traj, "completion_tokens"))],
     ["Cost", fm.total_cost_usd != null ? `$${fm.total_cost_usd.toFixed(4)}` : undefined],
+    ...(traj.meta ?? []),
     ["Session", traj.session_id],
   ];
   $("meta").replaceChildren(
@@ -345,7 +316,7 @@ function renderSteps(): void {
   const errors = state.steps.filter((v) => v.isError).length;
   const warnings = state.steps.filter((v) => v.isWarning).length;
   $("counts").textContent =
-    `${visible.length} / ${state.steps.length} steps shown · ${errors} parse error${errors === 1 ? "" : "s"} · ` +
+    `${visible.length} / ${state.steps.length} steps shown · ${errors} error${errors === 1 ? "" : "s"} · ` +
     `${warnings} warning${warnings === 1 ? "" : "s"}`;
 
   const container = $("steps");
@@ -359,10 +330,10 @@ function renderStep(v: ViewStep): HTMLElement {
   const badges: HTMLElement[] = [];
   if (s.source === "user") badges.push(el("span", "badge user", "task prompt"));
   else if (s.source === "agent") badges.push(el("span", "badge", (s.model_name ?? "agent").split("/").pop()!));
-  else badges.push(el("span", "badge", s.source ?? "step"));
-  if (v.isError) badges.push(el("span", "badge error", "parse error"));
-  if (v.isWarning) badges.push(el("span", "badge warn", "warning"));
-  if (v.isComplete) badges.push(el("span", "badge done", "task complete"));
+  else badges.push(el("span", "badge", s.source === "system" ? "system prompt" : (s.source ?? "step")));
+  if (v.isError) badges.push(el("span", "badge error", v.labels.error));
+  if (v.isWarning) badges.push(el("span", "badge warn", v.labels.warning));
+  if (v.isComplete) badges.push(el("span", "badge done", v.labels.complete));
 
   const stats: string[] = [];
   const nCalls = s.tool_calls?.length ?? 0;
@@ -442,6 +413,7 @@ function renderBody(v: ViewStep): HTMLElement[] {
     m?.cached_tokens != null && `cached ${fmt(m.cached_tokens)}`,
     m?.completion_tokens != null && `completion ${fmt(m.completion_tokens)}`,
     m?.cost_usd != null && `cost $${m.cost_usd.toFixed(4)}`,
+    ...(s.details ?? []),
   ].filter(Boolean);
   if (metaBits.length) out.push(el("div", "sec muted small", metaBits.join(" · ")));
   if (s.extra && Object.keys(s.extra).length) out.push(section("Extra", pre(JSON.stringify(s.extra, null, 2))));
