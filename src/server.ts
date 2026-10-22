@@ -26,11 +26,11 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
   send(res, status, JSON.stringify(data));
 }
 
-/** Turn a user-supplied name into a safe `*.json` file name inside TRAJ_DIR, or null. */
+/** Turn a user-supplied name into a safe `*.json` / `*.traj` file name inside TRAJ_DIR, or null. */
 function safeName(raw: string): string | null {
   let name = path.basename(raw.trim()).replace(/[^\w.\-]+/g, "_").replace(/^\.+/, "");
   if (!name) return null;
-  if (!name.toLowerCase().endsWith(".json")) name += ".json";
+  if (!/\.(json|traj)$/i.test(name)) name += ".json";
   return name.length > 200 ? null : name;
 }
 
@@ -54,7 +54,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 
 async function listTrajectories(): Promise<{ name: string; size: number; mtime: number }[]> {
   const entries = await fs.readdir(TRAJ_DIR, { withFileTypes: true });
-  const files = entries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".json"));
+  const files = entries.filter((e) => e.isFile() && /\.(json|traj)$/i.test(e.name));
   const out = await Promise.all(
     files.map(async (e) => {
       const st = await fs.stat(path.join(TRAJ_DIR, e.name));

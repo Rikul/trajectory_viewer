@@ -122,9 +122,13 @@ function taskOf(traj: Trajectory, fileName: string): string {
   return typeof t === "string" && t ? t : fileName.replace(/\.json$/i, "");
 }
 
-function sumMetric(traj: Trajectory, key: "prompt_tokens" | "completion_tokens" | "cached_tokens"): number {
-  return (traj.steps ?? []).reduce((acc, s) => acc + (s.metrics?.[key] ?? 0), 0);
+/** Sum of a per-step token count, or undefined when no step reports it. */
+function sumMetric(traj: Trajectory, key: "prompt_tokens" | "completion_tokens" | "cached_tokens"): number | undefined {
+  const vals = (traj.steps ?? []).map((s) => s.metrics?.[key]).filter((v): v is number => typeof v === "number");
+  return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
 }
+
+const fmtOpt = (n: number | undefined) => (n == null ? undefined : fmt(n));
 
 // ---- State ----
 
@@ -284,9 +288,9 @@ function renderTrajectory(): void {
     ["Parser", typeof parser === "string" ? parser : undefined],
     ["Schema", traj.schema_version],
     ["Steps", fmt(fm.total_steps ?? state.steps.length)],
-    ["Prompt tok", fmt(fm.total_prompt_tokens ?? sumMetric(traj, "prompt_tokens"))],
-    ["Cached tok", fmt(fm.total_cached_tokens ?? sumMetric(traj, "cached_tokens"))],
-    ["Completion tok", fmt(fm.total_completion_tokens ?? sumMetric(traj, "completion_tokens"))],
+    ["Prompt tok", fmtOpt(fm.total_prompt_tokens ?? sumMetric(traj, "prompt_tokens"))],
+    ["Cached tok", fmtOpt(fm.total_cached_tokens ?? sumMetric(traj, "cached_tokens"))],
+    ["Completion tok", fmtOpt(fm.total_completion_tokens ?? sumMetric(traj, "completion_tokens"))],
     ["Cost", fm.total_cost_usd != null ? `$${fm.total_cost_usd.toFixed(4)}` : undefined],
     ...(traj.meta ?? []),
     ["Session", traj.session_id],
@@ -328,8 +332,9 @@ function renderStep(v: ViewStep): HTMLElement {
   const s = v.step;
   const box = el("div", `step k-${v.kind}`);
   const badges: HTMLElement[] = [];
-  if (s.source === "user") badges.push(el("span", "badge user", "task prompt"));
-  else if (s.source === "agent") badges.push(el("span", "badge", (s.model_name ?? "agent").split("/").pop()!));
+  if (s.source === "user")
+    badges.push(el("span", "badge user", state.steps.find((x) => x.step.source === "user") === v ? "task prompt" : "user"));
+  else if (s.source === "agent") badges.push(el("span", "badge", (s.model_name ?? state.traj?.agent?.model_name ?? "agent").split("/").pop()!));
   else badges.push(el("span", "badge", s.source === "system" ? "system prompt" : (s.source ?? "step")));
   if (v.isError) badges.push(el("span", "badge error", v.labels.error));
   if (v.isWarning) badges.push(el("span", "badge warn", v.labels.warning));

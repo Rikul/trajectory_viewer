@@ -1,11 +1,16 @@
 # Trajectory Viewer
 
-A minimal viewer for agent trajectories. Supported formats:
+A minimal viewer for agent trajectories. Supported formats (detected automatically):
 
-- **ATIF** (`schema_version`, `agent`, `steps[]`), e.g. Harbor / terminus-2 `trajectory.json`
-- **Chat logs** (`messages[]` in OpenAI chat format + `llm_calls[]` with per-call model/usage, optional `system_prompt`, `usage_total`). Each assistant message becomes a step, paired in order with `llm_calls` for tokens/cost; tool results become its observation.
+| Format | Detected by | Notes |
+|---|---|---|
+| **ATIF** (Harbor / terminus-2 `trajectory.json`) | `steps[]` | parse errors / warnings from terminus feedback; "task complete" from `mark_task_complete` |
+| **SWE-agent** `.traj` | `trajectory[]` or `attempts[]` | thought / action / observation per step; model and instance from `replay_config`; retry-loop files show the chosen (or last) attempt |
+| **mini-swe-agent** (v1 text mode, v2 tool calls) | `messages[]` + `trajectory_format: "mini-swe-agent-*"` | format errors and command exceptions/timeouts flagged; exit status on the last step |
+| **Anthropic Messages** | `messages[]` with `tool_use` / `tool_result` / `thinking` blocks | top-level `system`; per-message `usage` |
+| **Chat logs** (OpenAI format) | `messages[]` (+ optional `llm_calls[]`) | each assistant message is a step, paired in order with `llm_calls` for tokens / cost; tool results become its observation |
 
-- Upload `.json` files from the collapsible sidebar (click or drag-and-drop). They're stored on the server in `trajectories/`.
+- Upload `.json` / `.traj` files from the collapsible sidebar (click or drag-and-drop). They're stored on the server in `trajectories/`.
 - Click a trajectory to view it: header with model / harness / token totals, plus one collapsible row per step.
 - Filter by **All / Warnings + errors / Errors only / Warnings only**, search across messages, commands and outputs, and **Expand all / Collapse all**.
 
@@ -29,8 +34,5 @@ Environment variables: `PORT` (default `3000`), `TRAJECTORIES_DIR` (default `./t
 - `src/client/formats.ts` — converts supported formats into the viewer's ATIF-shaped model (`src/client/types.ts`)
 - `public/` — `index.html`, `styles.css`
 
-Step markers:
-- ATIF: parse errors / warnings come from terminus-style feedback in the observation ("Previous response had
-  parsing errors / warnings"); "task complete" comes from a `mark_task_complete` tool call.
-- Chat logs: "tool error" when a tool result starts with `Error executing…`, `Error:` or a traceback; the last
-  assistant reply with no tool calls is marked "final answer".
+Step markers: red = error (parse / format / tool error), amber = warning (incl. non-submitted exit statuses
+such as `LimitsExceeded`), green = task complete / submitted / final answer.
