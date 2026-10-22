@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json",
     "typecheck": "tsc -p tsconfig.test.json",
-    "test": "npm run build && npm run typecheck && node --test tests/*.test.ts",
+    "test": "node scripts/check-node.mjs && npm run build && npm run typecheck && node --test tests/*.test.ts",
     "start": "node dist/server.js",
     "dev": "npm run build && npm start"
   },

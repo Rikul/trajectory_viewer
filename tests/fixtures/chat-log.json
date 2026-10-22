@@ -7,9 +7,9 @@
   "duration_s": 12.5,
   "iterations": 4,
   "usage_total": {
-    "prompt_tokens": 600,
-    "completion_tokens": 60,
-    "total_tokens": 660
+    "prompt_tokens": 400,
+    "completion_tokens": 40,
+    "total_tokens": 440
   },
   "history_message_count": 2,
   "system_prompt": "You are a helpful assistant.",
@@ -42,19 +42,8 @@
       "iteration": 3,
       "model": "deepseek/deepseek-v4.1-flash",
       "duration_s": 2,
-      "finish_reason": "tool_calls",
-      "usage": {
-        "prompt_tokens": 200,
-        "completion_tokens": 20,
-        "total_tokens": 220,
-        "prompt_tokens_details": {
-          "cached_tokens": 150
-        },
-        "completion_tokens_details": {
-          "reasoning_tokens": 5
-        },
-        "cost": 0.2
-      }
+      "finish_reason": null,
+      "usage": null
     },
     {
       "iteration": 4,

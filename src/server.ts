@@ -8,7 +8,8 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAJ_DIR = path.resolve(process.env.TRAJECTORIES_DIR ?? path.join(ROOT, "trajectories"));
 const PORT = Number(process.env.PORT ?? 3000);
 // Loopback by default: the API has no auth and trajectories can hold prompts and command output.
-const HOST = process.env.HOST || "127.0.0.1";
+// Deliberately not plain HOST, which shells and CI images often set to the machine's hostname.
+const HOST = process.env.TRAJECTORY_VIEWER_HOST || "127.0.0.1";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
@@ -154,6 +155,19 @@ const server = createServer(async (req, res) => {
     console.error(err);
     if (!res.headersSent) sendJson(res, 500, { error: "internal error" });
   }
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  const where = `${HOST}:${PORT}`;
+  const hint: Record<string, string> = {
+    EADDRINUSE: `port ${PORT} is already in use; set PORT to another port`,
+    EACCES: `not allowed to listen on ${where}; use a port above 1024`,
+    ENOTFOUND: `TRAJECTORY_VIEWER_HOST="${HOST}" does not resolve; use an IP address such as 127.0.0.1 or 0.0.0.0`,
+    EAI_AGAIN: `TRAJECTORY_VIEWER_HOST="${HOST}" could not be resolved; use an IP address such as 127.0.0.1 or 0.0.0.0`,
+    EADDRNOTAVAIL: `${HOST} is not an address of this machine; use 127.0.0.1, 0.0.0.0 or one of its IPs`,
+  };
+  console.error(`Could not start the trajectory viewer on ${where}: ${hint[err.code ?? ""] ?? err.message}`);
+  process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {

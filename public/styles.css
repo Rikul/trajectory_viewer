@@ -64,8 +64,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #traj-list li:hover { background: #eceef2; }
 #traj-list li.active { background: var(--blue-bg); }
 #traj-list .name { display: block; padding: 6px 8px; border-radius: 6px; color: inherit; text-decoration: none; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-#traj-list .del { opacity: 0; border: 0; background: none; color: var(--muted); padding: 0 4px; }
-#traj-list li:hover .del, #traj-list li:focus-within .del { opacity: 1; }
+/* Hidden but still focusable; not clickable until shown, so an invisible button can't be tapped. */
+#traj-list .del { opacity: 0; pointer-events: none; border: 0; background: none; color: var(--muted); padding: 0 4px; }
+#traj-list li:hover .del, #traj-list li:focus-within .del { opacity: 1; pointer-events: auto; }
 #traj-list .del:hover { color: var(--red); }
 #traj-list li.muted { padding: 6px 8px; }
 

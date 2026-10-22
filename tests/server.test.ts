@@ -15,14 +15,15 @@ let dir = "";
 let startupLog = "";
 
 function withoutHost(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const { HOST: _unused, ...rest } = env;
+  const { TRAJECTORY_VIEWER_HOST: _unused, ...rest } = env;
   return rest;
 }
 
 before(async () => {
   dir = mkdtempSync(path.join(tmpdir(), "traj-test-"));
   proc = spawn(process.execPath, [path.join(ROOT, "dist/server.js")], {
-    env: { ...withoutHost(process.env), PORT: "0", TRAJECTORIES_DIR: dir },
+    // A stray HOST (often the machine's hostname) must not change where the server binds.
+    env: { ...withoutHost(process.env), HOST: "0.0.0.0", PORT: "0", TRAJECTORIES_DIR: dir },
     stdio: ["ignore", "pipe", "inherit"],
   });
   base = await new Promise<string>((resolve, reject) => {
@@ -158,5 +159,18 @@ describe("server", () => {
       assert.ok([403, 404].includes(res.status), `${p} -> ${res.status}`);
     }
     assert.equal((await fetch(`${base}/`)).status, 200);
+  });
+
+  it("exits with a clear message when it cannot listen", async () => {
+    const run = spawn(process.execPath, [path.join(ROOT, "dist/server.js")], {
+      env: { ...process.env, PORT: "0", TRAJECTORY_VIEWER_HOST: "no-such-host.invalid", TRAJECTORIES_DIR: dir },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    run.stderr!.on("data", (d: Buffer) => (stderr += d));
+    const code = await new Promise((resolve) => run.on("exit", resolve));
+    assert.equal(code, 1);
+    assert.match(stderr, /Could not start the trajectory viewer on no-such-host\.invalid:0: .*(does not resolve|could not be resolved)/);
+    assert.doesNotMatch(stderr, /Unhandled 'error' event/);
   });
 });

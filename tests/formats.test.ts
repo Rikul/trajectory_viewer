@@ -28,7 +28,7 @@ describe("normalize", () => {
     for (const v of [null, 42, "x", [], {}, { foo: 1 }]) assert.equal(normalize(v), null);
   });
 
-  it("tolerates malformed entries instead of throwing", () => {
+  it("skips malformed chat-log tool calls (see fuzz.test.ts for every converter)", () => {
     const t = normalize({ messages: [null, { role: "assistant", tool_calls: [null, { id: "x", function: { name: "bash", arguments: "{" } }] }] });
     assert.deepEqual(t?.steps?.[0].tool_calls, [{ tool_call_id: "x", function_name: "bash", arguments: "{" }]);
   });
@@ -65,21 +65,21 @@ describe("chat log (messages + llm_calls)", () => {
     assert.match(obsText(first), /state: OPEN/);
   });
 
-  it("skips llm_calls that produced no message when pairing metrics", () => {
+  it("skips no_choices calls but keeps real calls whose usage and finish_reason are null", () => {
     const m = agents(t).map((s) => [s.metrics?.prompt_tokens, s.metrics?.completion_tokens, s.metrics?.cost_usd]);
     assert.deepEqual(m, [
       [100, 10, 0.1],
-      [200, 20, 0.2],
+      [undefined, undefined, undefined], // iteration 3: usage null, but it did produce this message
       [300, 30, 0.3],
     ]);
     assert.ok(agents(t)[1].details?.includes("llm 2.00s"), "the no-choices call's 9.9s must not be attributed");
-    assert.ok(Math.abs((t.final_metrics?.total_cost_usd ?? 0) - 0.6) < 1e-9);
-    assert.equal(t.final_metrics?.total_cached_tokens, 450);
+    assert.ok(Math.abs((t.final_metrics?.total_cost_usd ?? 0) - 0.4) < 1e-9);
+    assert.equal(t.final_metrics?.total_cached_tokens, 300);
   });
 
   it("uses usage_total for the header totals", () => {
-    assert.equal(t.final_metrics?.total_prompt_tokens, 600);
-    assert.equal(t.final_metrics?.total_completion_tokens, 60);
+    assert.equal(t.final_metrics?.total_prompt_tokens, 400);
+    assert.equal(t.final_metrics?.total_completion_tokens, 40);
   });
 
   it("flags failed tool calls and the final answer", () => {

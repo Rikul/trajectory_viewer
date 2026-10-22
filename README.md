@@ -22,19 +22,25 @@ npm run build   # compiles src/server.ts -> dist/, src/client/app.ts -> public/a
 npm start       # http://localhost:3000
 ```
 
-Environment variables: `PORT` (default `3000`), `HOST` (default `127.0.0.1`; the API has no auth, so only
-expose it on other interfaces deliberately), `TRAJECTORIES_DIR` (default `./trajectories`). Uploads are capped at 100 MB.
+Environment variables: `PORT` (default `3000`), `TRAJECTORY_VIEWER_HOST` (default `127.0.0.1`; the API has no
+auth, so only expose it on other interfaces deliberately, e.g. `0.0.0.0`), `TRAJECTORIES_DIR` (default
+`./trajectories`). Uploads are capped at 100 MB.
 
 ## Tests
 
 ```bash
-npm test   # build + typecheck + node:test (Node >= 22.18, which runs the .ts tests directly)
+npm test   # build + typecheck + node:test; needs Node >= 22.18, which runs the .ts tests directly (checked up front)
 ```
 
 - `tests/formats.test.ts` — one fixture per supported format in `tests/fixtures/`, checking step mapping, tool
   calls / observations, metrics and error / warning / completion flags.
+- `tests/fuzz.test.ts` — seeded fuzz (20k random inputs) plus known-awkward shapes: `normalize()` must never throw.
 - `tests/server.test.ts` — starts the server on a random port with a temp directory: upload / list / read / delete,
-  duplicate and concurrent same-name uploads, 413 for oversized bodies, path traversal, loopback binding.
+  duplicate and concurrent same-name uploads, 413 for oversized bodies, path traversal, loopback binding, and a
+  clear exit message when it can't listen.
+
+CI (`.github/workflows/ci.yml`) runs `npm test` on Node 22.18 (the minimum) and 24 for every pull request and
+push to `main`.
 
 ## Layout
 

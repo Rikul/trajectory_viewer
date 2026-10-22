@@ -153,7 +153,7 @@ function walkMessages(messages: unknown[], opts: WalkOptions = {}): { steps: Ste
       }
       if (opts.mini && !toolCalls.length) {
         // mini-swe-agent text mode: v2 stores parsed actions, v1 only has the ```bash block in the text.
-        const actions: Obj[] = Array.isArray(extra.actions) ? extra.actions : [];
+        const actions: Obj[] = Array.isArray(extra.actions) ? extra.actions.filter(isObj) : [];
         const cmds = actions.length
           ? actions.map((a) => String(a.command ?? ""))
           : [...textOf(m.content).matchAll(/```(?:bash|sh)?\s*\n([\s\S]*?)\n```/g)].map((x) => x[1]);
@@ -250,10 +250,11 @@ function systemStep(system: unknown): Step[] {
  *   usage_total?, model?, ... }. Messages may use OpenAI tool_calls or Anthropic content blocks.
  */
 function fromChatLog(raw: Obj): Trajectory {
-  // Calls are paired with assistant messages in order, so skip calls that produced no message
-  // (e.g. a provider returning zero choices is logged without usage or finish_reason).
+  // Calls are paired with assistant messages in order, so skip calls marked as having produced no
+  // message (a provider returning zero choices). Don't infer that from null usage / finish_reason:
+  // real calls can have both null.
   const calls: Obj[] = (Array.isArray(raw.llm_calls) ? raw.llm_calls : []).filter(
-    (c: unknown) => isObj(c) && !c.no_choices && (c.usage != null || c.finish_reason != null),
+    (c: unknown) => isObj(c) && !c.no_choices,
   );
   const { steps: walked } = walkMessages(raw.messages, { calls });
   const steps = finishSteps([...systemStep(raw.system_prompt ?? raw.system), ...walked]);
@@ -335,12 +336,14 @@ function fromMiniSweAgent(raw: Obj): Trajectory {
  *   replay_config: "<json string>", environment }. Retry-loop runs add `attempts: [<same shape>]`.
  */
 function fromSweAgent(raw: Obj): Trajectory {
-  const run: Obj = Array.isArray(raw.trajectory) ? raw : (raw.attempts?.[raw.attempts.length - 1] ?? {});
-  const info: Obj = { ...run.info, ...raw.info };
+  const last = Array.isArray(raw.attempts) ? raw.attempts[raw.attempts.length - 1] : undefined;
+  const run: Obj = Array.isArray(raw.trajectory) ? raw : isObj(last) ? last : {};
+  const info: Obj = { ...(isObj(run.info) ? run.info : {}), ...(isObj(raw.info) ? raw.info : {}) };
   const history: Obj[] = (Array.isArray(run.history) ? run.history : []).filter((h: unknown) => isObj(h) && !h.is_demo);
   let replay: Obj = {};
   try {
-    replay = typeof run.replay_config === "string" ? JSON.parse(run.replay_config) : (run.replay_config ?? {});
+    const parsed = typeof run.replay_config === "string" ? JSON.parse(run.replay_config) : run.replay_config;
+    if (isObj(parsed)) replay = parsed;
   } catch {
     /* not JSON */
   }
@@ -352,7 +355,7 @@ function fromSweAgent(raw: Obj): Trajectory {
   const task = history.find((h) => h.role === "user");
   if (task) steps.push({ source: "user", message: task.content });
 
-  for (const item of run.trajectory ?? []) {
+  for (const item of Array.isArray(run.trajectory) ? run.trajectory : []) {
     if (!isObj(item)) continue;
     const thought = textOf(item.thought) || textOf(item.response);
     const step: Step = {
