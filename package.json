@@ -1,0 +1,16 @@
+{
+  "name": "trajectory-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal viewer for ATIF agent trajectories",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json",
+    "start": "node dist/server.js",
+    "dev": "npm run build && npm start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3"
+  }
+}
