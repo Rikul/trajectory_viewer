@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trajectory Viewer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sb-head">
+      <span class="sb-title">Trajectories</span>
+      <button id="sb-toggle" class="icon-btn" title="Collapse sidebar" aria-label="Toggle sidebar">&laquo;</button>
+    </div>
+    <div class="sb-body">
+      <label id="dropzone" class="dropzone">
+        <input id="file-input" type="file" accept=".json,.traj,application/json" multiple class="visually-hidden" />
+        <strong>Upload .json / .traj</strong>
+        <span>Click or drop files here</span>
+      </label>
+      <div id="upload-status" class="muted small"></div>
+      <ul id="traj-list"></ul>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="empty" class="empty">Select a trajectory from the sidebar or upload one.</div>
+    <div id="viewer" hidden>
+      <header class="top">
+        <div class="row">
+          <h1 id="title"></h1>
+          <div class="actions">
+            <input id="search" type="search" placeholder="Search steps (message, command, output)" />
+            <button id="expand-all" class="btn">Expand all</button>
+            <button id="collapse-all" class="btn">Collapse all</button>
+          </div>
+        </div>
+        <div id="meta" class="meta"></div>
+        <div class="row filters">
+          <div id="filters" class="pills">
+            <button class="pill active" data-filter="all">All</button>
+            <button class="pill" data-filter="issues">Warnings + errors</button>
+            <button class="pill" data-filter="errors">Errors only</button>
+            <button class="pill" data-filter="warnings">Warnings only</button>
+          </div>
+          <span id="counts" class="muted"></span>
+        </div>
+      </header>
+      <section id="steps" class="steps"></section>
+      <footer id="footer" class="footer muted"></footer>
+    </div>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

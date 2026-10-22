@@ -1,0 +1,52 @@
+{
+  "info": {
+    "exit_status": "LimitsExceeded",
+    "submission": "",
+    "model_stats": {
+      "instance_cost": 3.01,
+      "api_calls": 3
+    },
+    "mini_version": "1.9.0",
+    "config": {
+      "model": {
+        "model_name": "gpt-5-mini"
+      }
+    }
+  },
+  "trajectory_format": "mini-swe-agent-1",
+  "instance_id": "astropy__astropy-12907",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Please solve this issue: separability matrix is wrong"
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: Let me list files.\n\n```bash\nls -la\n```"
+    },
+    {
+      "role": "user",
+      "content": "<returncode>0</returncode>\n<output>\nastropy\nsetup.py\n</output>"
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: two commands\n```bash\nls\n```\n```bash\npwd\n```"
+    },
+    {
+      "role": "user",
+      "content": "Please always provide EXACTLY ONE action in triple backticks, found 2 actions."
+    },
+    {
+      "role": "assistant",
+      "content": "THOUGHT: run tests\n\n```bash\npytest -x\n```"
+    },
+    {
+      "role": "user",
+      "content": "<returncode>1</returncode>\n<output>\nFAILED\n</output>"
+    }
+  ]
+}

@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Compiled client bundle
+public/*.js
+# Uploaded trajectories
+trajectories/*
+!trajectories/.gitkeep
