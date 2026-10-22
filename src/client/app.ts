@@ -272,7 +272,7 @@ function renderTrajectory(): void {
   const task = taskOf(traj, name);
   $("empty").hidden = true;
   $("viewer").hidden = false;
-  $("title").textContent = `${model} — ${task}`;
+  $("title").textContent = task;
   document.title = `${task} · Trajectory Viewer`;
 
   const fm = traj.final_metrics ?? {};
