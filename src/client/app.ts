@@ -242,7 +242,10 @@ dz.addEventListener("drop", (e) => {
 
 // ---- Loading ----
 
-async function loadFromHash(): Promise<void> {
+/** Incremented per load; a load whose number is no longer current drops its result (the user moved on). */
+let loadSeq = 0;
+
+async function loadFromHash(seq: number): Promise<void> {
   const name = decodeURIComponent(location.hash.slice(1));
   state.current = name || null;
   renderList();
@@ -253,13 +256,16 @@ async function loadFromHash(): Promise<void> {
     return;
   }
   const res = await fetch(`/api/trajectories/${encodeURIComponent(name)}`);
+  if (seq !== loadSeq) return;
   if (!res.ok) return showError(`Could not load ${name}.`);
   let raw: unknown;
   try {
     raw = await res.json();
   } catch {
-    return showError(`${name} is not valid JSON.`);
+    if (seq === loadSeq) showError(`${name} is not valid JSON.`);
+    return;
   }
+  if (seq !== loadSeq) return;
   let traj: Trajectory | null;
   try {
     traj = normalize(raw);
@@ -474,7 +480,12 @@ try {
   setSidebar(false);
 }
 // Last-resort guard so a failure never leaves the previous file's view on screen.
-const load = () => loadFromHash().catch((e) => showError(`Could not load trajectory: ${e instanceof Error ? e.message : e}`));
+const load = () => {
+  const seq = ++loadSeq;
+  return loadFromHash(seq).catch((e) => {
+    if (seq === loadSeq) showError(`Could not load trajectory: ${e instanceof Error ? e.message : e}`);
+  });
+};
 window.addEventListener("hashchange", () => void load());
 void refreshList()
   .catch(() => undefined)

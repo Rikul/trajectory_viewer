@@ -54,12 +54,12 @@ function flagExit(step: Step, status: string): void {
   else flag(step, "warning", `exit: ${status}`);
 }
 
+/** Per-run sums; a field is undefined when no step reported it (so "not reported" never shows as 0). */
 interface Totals {
-  prompt: number;
-  completion: number;
-  cached: number;
-  cost: number;
-  hasCost: boolean;
+  prompt?: number;
+  completion?: number;
+  cached?: number;
+  cost?: number;
 }
 
 /** Usage numbers from an OpenAI/litellm usage object or an Anthropic one. */
@@ -99,19 +99,11 @@ function finishSteps(steps: Step[]): Step[] {
 }
 
 function sumSteps(steps: Step[]): Totals {
-  const t: Totals = { prompt: 0, completion: 0, cached: 0, cost: 0, hasCost: false };
-  for (const s of steps) {
-    const m = s.metrics;
-    if (!m) continue;
-    t.prompt += m.prompt_tokens ?? 0;
-    t.completion += m.completion_tokens ?? 0;
-    t.cached += m.cached_tokens ?? 0;
-    if (m.cost_usd != null) {
-      t.cost += m.cost_usd;
-      t.hasCost = true;
-    }
-  }
-  return t;
+  const sum = (key: keyof NonNullable<Step["metrics"]>): number | undefined => {
+    const vals = steps.map((s) => s.metrics?.[key]).filter((v): v is number => typeof v === "number");
+    return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
+  };
+  return { prompt: sum("prompt_tokens"), completion: sum("completion_tokens"), cached: sum("cached_tokens"), cost: sum("cost_usd") };
 }
 
 // ---- Generic message walker (OpenAI chat, Anthropic content blocks, mini-swe-agent) ----
@@ -283,7 +275,7 @@ function fromChatLog(raw: Obj): Trajectory {
       total_prompt_tokens: num(total.prompt_tokens) ?? t.prompt,
       total_completion_tokens: num(total.completion_tokens) ?? t.completion,
       total_cached_tokens: t.cached,
-      total_cost_usd: t.hasCost ? t.cost : undefined,
+      total_cost_usd: t.cost,
       total_steps: steps.length,
     },
     meta,
@@ -318,10 +310,10 @@ function fromMiniSweAgent(raw: Obj): Trajectory {
     },
     steps,
     final_metrics: {
-      total_prompt_tokens: t.prompt || undefined,
-      total_completion_tokens: t.completion || undefined,
-      total_cached_tokens: t.cached || undefined,
-      total_cost_usd: num(stats.instance_cost) ?? (t.hasCost ? t.cost : undefined),
+      total_prompt_tokens: t.prompt,
+      total_completion_tokens: t.completion,
+      total_cached_tokens: t.cached,
+      total_cost_usd: num(stats.instance_cost) ?? t.cost,
       total_steps: steps.length,
     },
     meta,
@@ -336,8 +328,13 @@ function fromMiniSweAgent(raw: Obj): Trajectory {
  *   replay_config: "<json string>", environment }. Retry-loop runs add `attempts: [<same shape>]`.
  */
 function fromSweAgent(raw: Obj): Trajectory {
-  const last = Array.isArray(raw.attempts) ? raw.attempts[raw.attempts.length - 1] : undefined;
-  const run: Obj = Array.isArray(raw.trajectory) ? raw : isObj(last) ? last : {};
+  // A chosen attempt is merged into the top level; otherwise use info.best_attempt_idx, else the last attempt.
+  const attempts: unknown[] = Array.isArray(raw.attempts) ? raw.attempts : [];
+  const bestIdx = num(raw.info?.best_attempt_idx);
+  const best = bestIdx != null && Number.isInteger(bestIdx) && isObj(attempts[bestIdx]) ? attempts[bestIdx] : undefined;
+  const last = attempts[attempts.length - 1];
+  const run: Obj = Array.isArray(raw.trajectory) ? raw : isObj(best) ? best : isObj(last) ? last : {};
+  const shownBest = (run === raw || run === best) && bestIdx != null;
   const info: Obj = { ...(isObj(run.info) ? run.info : {}), ...(isObj(raw.info) ? raw.info : {}) };
   const history: Obj[] = (Array.isArray(run.history) ? run.history : []).filter((h: unknown) => isObj(h) && !h.is_demo);
   let replay: Obj = {};
@@ -381,7 +378,7 @@ function fromSweAgent(raw: Obj): Trajectory {
   if (Array.isArray(raw.attempts) && raw.attempts.length > 1)
     meta.push([
       "Attempts",
-      `${raw.attempts.length} (showing ${run === raw && info.best_attempt_idx != null ? `best, #${info.best_attempt_idx + 1}` : "last"})`,
+      `${raw.attempts.length} (showing ${shownBest ? `best, #${bestIdx + 1}` : "last"})`,
     ]);
   if (run.environment) meta.push(["Environment", String(run.environment)]);
 

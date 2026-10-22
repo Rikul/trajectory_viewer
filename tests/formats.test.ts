@@ -95,6 +95,19 @@ describe("chat log (messages + llm_calls)", () => {
   });
 });
 
+describe("chat log without usage data", () => {
+  it("leaves totals undefined instead of reporting 0", () => {
+    const t = normalize({ messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }] })!;
+    assert.deepEqual(t.final_metrics, {
+      total_prompt_tokens: undefined,
+      total_completion_tokens: undefined,
+      total_cached_tokens: undefined,
+      total_cost_usd: undefined,
+      total_steps: 2,
+    });
+  });
+});
+
 describe("Anthropic Messages", () => {
   const t = convert("anthropic.json");
 
@@ -224,6 +237,23 @@ describe("SWE-agent retry loop (attempts only)", () => {
     assert.equal(Object.fromEntries(t.meta ?? []).Attempts, "2 (showing last)");
     assert.equal(t.task_name, "pallets__flask-4045");
     assert.deepEqual(flagged(t), { complete: [3] });
+  });
+});
+
+describe("SWE-agent retry loop with info.best_attempt_idx", () => {
+  const raw = load("swe-agent-attempts.traj") as Record<string, unknown>;
+
+  it("shows the chosen attempt even when it is not the last", () => {
+    const t = normalize({ ...raw, info: { best_attempt_idx: 0 } })!;
+    assert.equal(agents(t)[0].message, "first try");
+    assert.equal(Object.fromEntries(t.meta ?? []).Attempts, "2 (showing best, #1)");
+    assert.deepEqual(flagged(t), { warning: [3] }); // attempt 1 ended with exit_cost
+  });
+
+  it("falls back to the last attempt when the index is out of range", () => {
+    const t = normalize({ ...raw, info: { best_attempt_idx: 7 } })!;
+    assert.equal(agents(t)[0].message, "second try");
+    assert.equal(Object.fromEntries(t.meta ?? []).Attempts, "2 (showing last)");
   });
 });
 
