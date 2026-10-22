@@ -22,7 +22,19 @@ npm run build   # compiles src/server.ts -> dist/, src/client/app.ts -> public/a
 npm start       # http://localhost:3000
 ```
 
-Environment variables: `PORT` (default `3000`), `TRAJECTORIES_DIR` (default `./trajectories`).
+Environment variables: `PORT` (default `3000`), `HOST` (default `127.0.0.1`; the API has no auth, so only
+expose it on other interfaces deliberately), `TRAJECTORIES_DIR` (default `./trajectories`). Uploads are capped at 100 MB.
+
+## Tests
+
+```bash
+npm test   # build + typecheck + node:test (Node >= 22.18, which runs the .ts tests directly)
+```
+
+- `tests/formats.test.ts` — one fixture per supported format in `tests/fixtures/`, checking step mapping, tool
+  calls / observations, metrics and error / warning / completion flags.
+- `tests/server.test.ts` — starts the server on a random port with a temp directory: upload / list / read / delete,
+  duplicate and concurrent same-name uploads, 413 for oversized bodies, path traversal, loopback binding.
 
 ## Layout
 

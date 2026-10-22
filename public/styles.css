@@ -53,18 +53,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .dropzone span { color: var(--muted); font-size: 12px; }
 .dropzone.over { border-color: var(--blue); background: var(--blue-bg); }
+.dropzone:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 #upload-status { min-height: 18px; margin: 6px 2px; }
 #traj-list { list-style: none; margin: 0; padding: 0; }
 #traj-list li {
   display: flex; align-items: center; gap: 4px;
-  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  padding-right: 4px; border-radius: 6px;
 }
 #traj-list li:hover { background: #eceef2; }
 #traj-list li.active { background: var(--blue-bg); }
-#traj-list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-#traj-list .del { visibility: hidden; border: 0; background: none; color: var(--muted); padding: 0 4px; }
-#traj-list li:hover .del { visibility: visible; }
+#traj-list .name { display: block; padding: 6px 8px; border-radius: 6px; color: inherit; text-decoration: none; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+#traj-list .del { opacity: 0; border: 0; background: none; color: var(--muted); padding: 0 4px; }
+#traj-list li:hover .del, #traj-list li:focus-within .del { opacity: 1; }
 #traj-list .del:hover { color: var(--red); }
+#traj-list li.muted { padding: 6px 8px; }
 
 /* Main */
 #main { flex: 1; min-width: 0; }

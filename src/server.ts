@@ -7,6 +7,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAJ_DIR = path.resolve(process.env.TRAJECTORIES_DIR ?? path.join(ROOT, "trajectories"));
 const PORT = Number(process.env.PORT ?? 3000);
+// Loopback by default: the API has no auth and trajectories can hold prompts and command output.
+const HOST = process.env.HOST || "127.0.0.1";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
@@ -34,20 +36,22 @@ function safeName(raw: string): string | null {
   return name.length > 200 ? null : name;
 }
 
+class TooLargeError extends Error {}
+
+/**
+ * Read the request body, up to MAX_UPLOAD_BYTES. An oversized body is still read to the end (and
+ * discarded) rather than cutting the socket, so the client actually receives the 413.
+ */
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (c: Buffer) => {
       size += c.length;
-      if (size > MAX_UPLOAD_BYTES) {
-        reject(new Error("too_large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
+      if (size <= MAX_UPLOAD_BYTES) chunks.push(c);
+      else chunks.length = 0;
     });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("end", () => (size > MAX_UPLOAD_BYTES ? reject(new TooLargeError()) : resolve(Buffer.concat(chunks))));
     req.on("error", reject);
   });
 }
@@ -64,15 +68,17 @@ async function listTrajectories(): Promise<{ name: string; size: number; mtime: 
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
-async function uniqueName(name: string): Promise<string> {
+/** Write `body` under `name`, or `name-1`, `name-2`, … The exclusive-create flag makes concurrent uploads safe. */
+async function writeUnique(name: string, body: Buffer): Promise<string> {
   const ext = path.extname(name);
   const base = name.slice(0, -ext.length);
   for (let i = 0; ; i++) {
     const candidate = i === 0 ? name : `${base}-${i}${ext}`;
     try {
-      await fs.access(path.join(TRAJ_DIR, candidate));
-    } catch {
+      await fs.writeFile(path.join(TRAJ_DIR, candidate), body, { flag: "wx" });
       return candidate;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
     }
   }
 }
@@ -86,20 +92,25 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     if (req.method === "POST") {
       const name = safeName(url.searchParams.get("name") ?? "trajectory.json");
       if (!name) return sendJson(res, 400, { error: "invalid file name" });
+      const tooLarge = { error: `file too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` };
+      if (Number(req.headers["content-length"]) > MAX_UPLOAD_BYTES) {
+        sendJson(res, 413, tooLarge);
+        req.resume(); // discard the body instead of resetting the connection
+        return;
+      }
       let body: Buffer;
       try {
         body = await readBody(req);
-      } catch {
-        return sendJson(res, 413, { error: "file too large" });
+      } catch (e) {
+        if (e instanceof TooLargeError) return sendJson(res, 413, tooLarge);
+        throw e;
       }
       try {
         JSON.parse(body.toString("utf8"));
       } catch {
         return sendJson(res, 400, { error: "file is not valid JSON" });
       }
-      const finalName = await uniqueName(name);
-      await fs.writeFile(path.join(TRAJ_DIR, finalName), body);
-      return sendJson(res, 201, { name: finalName });
+      return sendJson(res, 201, { name: await writeUnique(name, body) });
     }
     return sendJson(res, 405, { error: "method not allowed" });
   }
@@ -133,7 +144,7 @@ async function serveStatic(res: ServerResponse, pathname: string): Promise<void>
 
 await fs.mkdir(TRAJ_DIR, { recursive: true });
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname.startsWith("/api/")) await handleApi(req, res, url);
@@ -143,6 +154,10 @@ createServer(async (req, res) => {
     console.error(err);
     if (!res.headersSent) sendJson(res, 500, { error: "internal error" });
   }
-}).listen(PORT, () => {
-  console.log(`Trajectory viewer on http://localhost:${PORT} (storing in ${TRAJ_DIR})`);
+});
+
+server.listen(PORT, HOST, () => {
+  const addr = server.address();
+  const port = typeof addr === "object" && addr ? addr.port : PORT;
+  console.log(`Trajectory viewer on http://${HOST}:${port} (storing in ${TRAJ_DIR})`);
 });

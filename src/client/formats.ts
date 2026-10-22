@@ -81,6 +81,18 @@ function readUsage(u: Obj | undefined): Step["metrics"] {
   };
 }
 
+/**
+ * Epoch timestamp → ISO string. The unit (s, ms, µs or ns) is inferred from the magnitude, since present-day
+ * values differ by 1000× per unit. Returns undefined for anything Date can't represent.
+ */
+export function epochToIso(ts: number | undefined): string | undefined {
+  if (ts == null || !Number.isFinite(ts)) return undefined;
+  const abs = Math.abs(ts);
+  const ms = abs < 1e11 ? ts * 1e3 : abs < 1e14 ? ts : abs < 1e17 ? ts / 1e3 : ts / 1e6;
+  const d = new Date(ms);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : undefined;
+}
+
 function finishSteps(steps: Step[]): Step[] {
   steps.forEach((s, i) => (s.step_id = i + 1));
   return steps;
@@ -124,7 +136,7 @@ function walkMessages(messages: unknown[], opts: WalkOptions = {}): { steps: Ste
 
     if (m.role === "assistant") {
       const call: Obj = opts.calls?.[callIdx++] ?? {};
-      const toolCalls: ToolCall[] = (Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc: Obj) => ({
+      const toolCalls: ToolCall[] = (Array.isArray(m.tool_calls) ? m.tool_calls.filter(isObj) : []).map((tc: Obj) => ({
         tool_call_id: tc.id,
         function_name: tc.function?.name ?? tc.name,
         arguments: parseArgs(tc.function?.arguments ?? tc.arguments),
@@ -158,12 +170,11 @@ function walkMessages(messages: unknown[], opts: WalkOptions = {}): { steps: Ste
         num(call.usage?.completion_tokens_details?.reasoning_tokens) != null &&
           `reasoning ${call.usage.completion_tokens_details.reasoning_tokens.toLocaleString("en-US")}`,
       ].filter(Boolean) as string[];
-      const ts = num(extra.timestamp);
 
       lastAgent = {
         source: "agent",
         model_name: call.model ?? m.model ?? response.model,
-        timestamp: ts != null ? new Date(ts * 1000).toISOString() : undefined,
+        timestamp: epochToIso(num(extra.timestamp)),
         message,
         reasoning_content: reasoning,
         tool_calls: toolCalls,
@@ -239,7 +250,11 @@ function systemStep(system: unknown): Step[] {
  *   usage_total?, model?, ... }. Messages may use OpenAI tool_calls or Anthropic content blocks.
  */
 function fromChatLog(raw: Obj): Trajectory {
-  const calls: Obj[] = Array.isArray(raw.llm_calls) ? raw.llm_calls : [];
+  // Calls are paired with assistant messages in order, so skip calls that produced no message
+  // (e.g. a provider returning zero choices is logged without usage or finish_reason).
+  const calls: Obj[] = (Array.isArray(raw.llm_calls) ? raw.llm_calls : []).filter(
+    (c: unknown) => isObj(c) && !c.no_choices && (c.usage != null || c.finish_reason != null),
+  );
   const { steps: walked } = walkMessages(raw.messages, { calls });
   const steps = finishSteps([...systemStep(raw.system_prompt ?? raw.system), ...walked]);
   markEnding(steps);

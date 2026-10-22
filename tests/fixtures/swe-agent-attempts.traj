@@ -1,0 +1,78 @@
+{
+  "attempts": [
+    {
+      "environment": "main",
+      "replay_config": "{\"agent\":{\"model\":{\"name\":\"gpt-4o\"}},\"problem_statement\":{\"id\":\"pallets__flask-4045\"}}",
+      "info": {
+        "exit_status": "exit_cost",
+        "model_stats": {
+          "instance_cost": 0.1,
+          "tokens_sent": 1000,
+          "tokens_received": 100,
+          "api_calls": 1
+        }
+      },
+      "history": [
+        {
+          "role": "system",
+          "content": "sys",
+          "message_type": "system_prompt"
+        },
+        {
+          "role": "user",
+          "content": "Raise error for blueprint names with dots",
+          "message_type": "observation"
+        }
+      ],
+      "trajectory": [
+        {
+          "thought": "first try",
+          "action": "submit",
+          "observation": "diff --git a/x b/x",
+          "response": "",
+          "execution_time": 0.1,
+          "state": {},
+          "query": [],
+          "extra_info": {}
+        }
+      ]
+    },
+    {
+      "environment": "main",
+      "replay_config": "{\"agent\":{\"model\":{\"name\":\"gpt-4o\"}},\"problem_statement\":{\"id\":\"pallets__flask-4045\"}}",
+      "info": {
+        "exit_status": "submitted",
+        "model_stats": {
+          "instance_cost": 0.1,
+          "tokens_sent": 1000,
+          "tokens_received": 100,
+          "api_calls": 1
+        }
+      },
+      "history": [
+        {
+          "role": "system",
+          "content": "sys",
+          "message_type": "system_prompt"
+        },
+        {
+          "role": "user",
+          "content": "Raise error for blueprint names with dots",
+          "message_type": "observation"
+        }
+      ],
+      "trajectory": [
+        {
+          "thought": "second try",
+          "action": "submit",
+          "observation": "diff --git a/x b/x",
+          "response": "",
+          "execution_time": 0.1,
+          "state": {},
+          "query": [],
+          "extra_info": {}
+        }
+      ]
+    }
+  ]
+}

@@ -181,11 +181,12 @@ function renderList(): void {
       e.stopPropagation();
       void deleteTrajectory(f.name);
     });
-    const name = el("span", "name", f.name);
+    const name = el("a", "name", f.name);
+    name.href = `#${encodeURIComponent(f.name)}`;
     name.title = `${f.name}\n${(f.size / 1024).toFixed(1)} KB · ${new Date(f.mtime).toLocaleString()}`;
-    const li = el("li", f.name === state.current ? "active" : "", name, del);
-    li.addEventListener("click", () => (location.hash = encodeURIComponent(f.name)));
-    list.append(li);
+    if (f.name === state.current) name.setAttribute("aria-current", "page");
+    del.setAttribute("aria-label", `Delete ${f.name}`);
+    list.append(el("li", f.name === state.current ? "active" : "", name, del));
   }
 }
 
@@ -202,11 +203,17 @@ async function upload(files: FileList | File[]): Promise<void> {
   const failures: string[] = [];
   for (const file of Array.from(files)) {
     status.textContent = `Uploading ${file.name}…`;
-    const res = await fetch(`/api/trajectories?name=${encodeURIComponent(file.name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: file,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`/api/trajectories?name=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: file,
+      });
+    } catch (e) {
+      failures.push(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+      continue;
+    }
     const data = await res.json().catch(() => ({}));
     if (res.ok) last = data.name;
     else failures.push(`${file.name}: ${data.error ?? res.statusText}`);
@@ -253,7 +260,13 @@ async function loadFromHash(): Promise<void> {
   } catch {
     return showError(`${name} is not valid JSON.`);
   }
-  const traj = normalize(raw);
+  let traj: Trajectory | null;
+  try {
+    traj = normalize(raw);
+  } catch (e) {
+    console.error(e);
+    return showError(`${name} could not be read: ${e instanceof Error ? e.message : String(e)}`);
+  }
   if (!traj) return showError(`${name} isn't a recognised trajectory (expected ATIF "steps" or a chat log with "messages").`);
   state.traj = traj;
   state.steps = analyze(traj);
@@ -460,5 +473,9 @@ try {
 } catch {
   setSidebar(false);
 }
-window.addEventListener("hashchange", () => void loadFromHash());
-void refreshList().then(loadFromHash);
+// Last-resort guard so a failure never leaves the previous file's view on screen.
+const load = () => loadFromHash().catch((e) => showError(`Could not load trajectory: ${e instanceof Error ? e.message : e}`));
+window.addEventListener("hashchange", () => void load());
+void refreshList()
+  .catch(() => undefined)
+  .then(load);
