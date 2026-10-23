@@ -1,5 +1,7 @@
 # Trajectory Viewer
 
+<a href="screenshot1.png"><img src="screenshot1.png" alt="Trajectory Viewer screenshot" width="600"></a>
+
 A minimal viewer for agent trajectories. Supported formats (detected automatically):
 
 | Format | Detected by | Notes |
