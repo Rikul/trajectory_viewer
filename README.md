@@ -10,7 +10,9 @@ A minimal viewer for agent trajectories. Supported formats (detected automatical
 | **Anthropic Messages** | `messages[]` with `tool_use` / `tool_result` / `thinking` blocks | top-level `system`; per-message `usage` |
 | **Chat logs** (OpenAI format) | `messages[]` (+ optional `llm_calls[]`) | each assistant message is a step, paired in order with `llm_calls` for tokens / cost; tool results become its observation |
 
-- Upload `.json` / `.traj` files from the collapsible sidebar (click or drag-and-drop). They're stored on the server in `trajectories/`.
+- Upload `.json` / `.traj` files from the collapsible sidebar (click or drag-and-drop). They're stored on the server in `trajectories/`;
+  uncheck **Save trajectory** to keep an upload only in a temp directory that is deleted when the server stops
+  (marked *temp* in the list).
 - Click a trajectory to view it: header with model / harness / token totals, plus one collapsible row per step.
 - Filter by **All / Warnings + errors / Errors only / Warnings only**, search across messages, commands and outputs, and **Expand all / Collapse all**.
 

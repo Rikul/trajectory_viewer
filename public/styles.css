@@ -55,6 +55,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dropzone.over { border-color: var(--blue); background: var(--blue-bg); }
 .dropzone:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.save-opt { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; cursor: pointer; }
+.temp-tag { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; flex: none; }
 #upload-status { min-height: 18px; margin: 6px 2px; }
 #traj-list { list-style: none; margin: 0; padding: 0; }
 #traj-list li {

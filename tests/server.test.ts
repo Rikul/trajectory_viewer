@@ -89,6 +89,22 @@ describe("server", () => {
     assert.equal((await fetch(`${base}/api/trajectories/a.json`)).status, 404);
   });
 
+  it("keeps unsaved uploads out of the trajectories directory", async () => {
+    const before = files();
+    const res = await fetch(`${base}/api/trajectories?name=scratch.json&temp=1`, { method: "POST", body: '{"steps":[]}' });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { name: "scratch.json", temp: true });
+    assert.deepEqual(files(), before);
+
+    const list: { name: string; temp: boolean }[] = await (await fetch(`${base}/api/trajectories`)).json();
+    assert.equal(list.find((f) => f.name === "scratch.json")?.temp, true);
+    assert.equal(await (await fetch(`${base}/api/trajectories/scratch.json?temp=1`)).text(), '{"steps":[]}');
+    assert.equal((await fetch(`${base}/api/trajectories/scratch.json`)).status, 404);
+
+    assert.equal((await fetch(`${base}/api/trajectories/scratch.json?temp=1`, { method: "DELETE" })).status, 200);
+    assert.equal((await fetch(`${base}/api/trajectories/scratch.json?temp=1`)).status, 404);
+  });
+
   it("keeps .traj files and adds .json to other names", async () => {
     assert.deepEqual(await (await upload("run.traj", "{}")).json(), { name: "run.traj" });
     assert.deepEqual(await (await upload("notes.txt", "{}")).json(), { name: "notes.txt.json" });

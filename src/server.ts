@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { promises as fs } from "node:fs";
+import { promises as fs, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,8 @@ const PORT = Number(process.env.PORT ?? 3000);
 // Deliberately not plain HOST, which shells and CI images often set to the machine's hostname.
 const HOST = process.env.TRAJECTORY_VIEWER_HOST || "127.0.0.1";
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+// Uploads with "save trajectory" unchecked go here; the directory is removed when the server exits.
+const TMP_DIR = await fs.mkdtemp(path.join(tmpdir(), "trajectory-viewer-"));
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -57,26 +60,32 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-async function listTrajectories(): Promise<{ name: string; size: number; mtime: number }[]> {
-  const entries = await fs.readdir(TRAJ_DIR, { withFileTypes: true });
+type Listing = { name: string; size: number; mtime: number; temp: boolean };
+
+async function listDir(dir: string, temp: boolean): Promise<Listing[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
   const files = entries.filter((e) => e.isFile() && /\.(json|traj)$/i.test(e.name));
-  const out = await Promise.all(
+  return Promise.all(
     files.map(async (e) => {
-      const st = await fs.stat(path.join(TRAJ_DIR, e.name));
-      return { name: e.name, size: st.size, mtime: st.mtimeMs };
+      const st = await fs.stat(path.join(dir, e.name));
+      return { name: e.name, size: st.size, mtime: st.mtimeMs, temp };
     }),
   );
-  return out.sort((a, b) => b.mtime - a.mtime);
+}
+
+async function listTrajectories(): Promise<Listing[]> {
+  const [saved, temp] = await Promise.all([listDir(TRAJ_DIR, false), listDir(TMP_DIR, true)]);
+  return [...saved, ...temp].sort((a, b) => b.mtime - a.mtime);
 }
 
 /** Write `body` under `name`, or `name-1`, `name-2`, … The exclusive-create flag makes concurrent uploads safe. */
-async function writeUnique(name: string, body: Buffer): Promise<string> {
+async function writeUnique(dir: string, name: string, body: Buffer): Promise<string> {
   const ext = path.extname(name);
   const base = name.slice(0, -ext.length);
   for (let i = 0; ; i++) {
     const candidate = i === 0 ? name : `${base}-${i}${ext}`;
     try {
-      await fs.writeFile(path.join(TRAJ_DIR, candidate), body, { flag: "wx" });
+      await fs.writeFile(path.join(dir, candidate), body, { flag: "wx" });
       return candidate;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
@@ -85,6 +94,8 @@ async function writeUnique(name: string, body: Buffer): Promise<string> {
 }
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  // `?temp=1` addresses the temporary (unsaved) uploads instead of TRAJ_DIR.
+  const dir = url.searchParams.get("temp") === "1" ? TMP_DIR : TRAJ_DIR;
   const parts = url.pathname.split("/").filter(Boolean); // ["api", "trajectories", name?]
   if (parts[1] !== "trajectories" || parts.length > 3) return sendJson(res, 404, { error: "not found" });
 
@@ -111,14 +122,15 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       } catch {
         return sendJson(res, 400, { error: "file is not valid JSON" });
       }
-      return sendJson(res, 201, { name: await writeUnique(name, body) });
+      const saved = await writeUnique(dir, name, body);
+      return sendJson(res, 201, dir === TMP_DIR ? { name: saved, temp: true } : { name: saved });
     }
     return sendJson(res, 405, { error: "method not allowed" });
   }
 
   const name = safeName(decodeURIComponent(parts[2]));
   if (!name) return sendJson(res, 400, { error: "invalid file name" });
-  const file = path.join(TRAJ_DIR, name);
+  const file = path.join(dir, name);
   try {
     if (req.method === "GET") return send(res, 200, await fs.readFile(file));
     if (req.method === "DELETE") {
@@ -156,6 +168,10 @@ const server = createServer(async (req, res) => {
     if (!res.headersSent) sendJson(res, 500, { error: "internal error" });
   }
 });
+
+const removeTmp = () => rmSync(TMP_DIR, { recursive: true, force: true });
+process.on("exit", removeTmp);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => process.exit(0));
 
 server.on("error", (err: NodeJS.ErrnoException) => {
   const where = `${HOST}:${PORT}`;

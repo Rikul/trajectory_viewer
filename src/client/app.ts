@@ -133,7 +133,8 @@ const fmtOpt = (n: number | undefined) => (n == null ? undefined : fmt(n));
 // ---- State ----
 
 const state = {
-  files: [] as { name: string; size: number; mtime: number }[],
+  files: [] as FileEntry[],
+  /** Key of the open trajectory: its file name, or `tmp/<name>` for an unsaved upload. */
   current: null as string | null,
   traj: null as Trajectory | null,
   steps: [] as ViewStep[],
@@ -143,6 +144,24 @@ const state = {
 };
 
 // ---- Sidebar ----
+
+interface FileEntry {
+  name: string;
+  size: number;
+  mtime: number;
+  temp?: boolean;
+}
+
+/** Unsaved uploads live in the server's temp dir; saved file names never contain "/", so the prefix is unambiguous. */
+const TMP_PREFIX = "tmp/";
+const keyOf = (name: string, temp?: boolean) => (temp ? TMP_PREFIX + name : name);
+
+/** API URL for a trajectory key. */
+function apiUrl(key: string): string {
+  const temp = key.startsWith(TMP_PREFIX);
+  const name = temp ? key.slice(TMP_PREFIX.length) : key;
+  return `/api/trajectories/${encodeURIComponent(name)}${temp ? "?temp=1" : ""}`;
+}
 
 const sidebar = $("sidebar");
 const SIDEBAR_KEY = "tv.sidebarCollapsed";
@@ -175,25 +194,28 @@ function renderList(): void {
     return;
   }
   for (const f of state.files) {
+    const key = keyOf(f.name, f.temp);
     const del = el("button", "del", "✕");
     del.title = "Delete";
     del.addEventListener("click", (e) => {
       e.stopPropagation();
-      void deleteTrajectory(f.name);
+      void deleteTrajectory(key, f.name);
     });
     const name = el("a", "name", f.name);
-    name.href = `#${encodeURIComponent(f.name)}`;
-    name.title = `${f.name}\n${(f.size / 1024).toFixed(1)} KB · ${new Date(f.mtime).toLocaleString()}`;
-    if (f.name === state.current) name.setAttribute("aria-current", "page");
+    name.href = `#${encodeURIComponent(key)}`;
+    const note = f.temp ? "\nNot saved: removed when the server stops" : "";
+    name.title = `${f.name}\n${(f.size / 1024).toFixed(1)} KB · ${new Date(f.mtime).toLocaleString()}${note}`;
+    if (key === state.current) name.setAttribute("aria-current", "page");
     del.setAttribute("aria-label", `Delete ${f.name}`);
-    list.append(el("li", f.name === state.current ? "active" : "", name, del));
+    const tag = f.temp ? [el("span", "temp-tag", "temp")] : [];
+    list.append(el("li", key === state.current ? "active" : "", name, ...tag, del));
   }
 }
 
-async function deleteTrajectory(name: string): Promise<void> {
+async function deleteTrajectory(key: string, name: string): Promise<void> {
   if (!confirm(`Delete ${name}?`)) return;
-  await fetch(`/api/trajectories/${encodeURIComponent(name)}`, { method: "DELETE" });
-  if (state.current === name) location.hash = "";
+  await fetch(apiUrl(key), { method: "DELETE" });
+  if (state.current === key) location.hash = "";
   await refreshList();
 }
 
@@ -201,11 +223,12 @@ async function upload(files: FileList | File[]): Promise<void> {
   const status = $("upload-status");
   let last: string | null = null;
   const failures: string[] = [];
+  const save = $<HTMLInputElement>("save-traj").checked;
   for (const file of Array.from(files)) {
     status.textContent = `Uploading ${file.name}…`;
     let res: Response;
     try {
-      res = await fetch(`/api/trajectories?name=${encodeURIComponent(file.name)}`, {
+      res = await fetch(`/api/trajectories?name=${encodeURIComponent(file.name)}${save ? "" : "&temp=1"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: file,
@@ -215,10 +238,10 @@ async function upload(files: FileList | File[]): Promise<void> {
       continue;
     }
     const data = await res.json().catch(() => ({}));
-    if (res.ok) last = data.name;
+    if (res.ok) last = keyOf(data.name, data.temp);
     else failures.push(`${file.name}: ${data.error ?? res.statusText}`);
   }
-  status.textContent = failures.length ? failures.join("; ") : last ? "Uploaded." : "";
+  status.textContent = failures.length ? failures.join("; ") : last ? (save ? "Uploaded." : "Opened (not saved).") : "";
   await refreshList();
   if (last) location.hash = encodeURIComponent(last);
 }
@@ -255,7 +278,7 @@ async function loadFromHash(seq: number): Promise<void> {
     $("empty").textContent = "Select a trajectory from the sidebar or upload one.";
     return;
   }
-  const res = await fetch(`/api/trajectories/${encodeURIComponent(name)}`);
+  const res = await fetch(apiUrl(name));
   if (seq !== loadSeq) return;
   if (!res.ok) return showError(`Could not load ${name}.`);
   let raw: unknown;
@@ -290,7 +313,7 @@ function showError(msg: string): void {
 
 function renderTrajectory(): void {
   const traj = state.traj!;
-  const name = state.current!;
+  const name = state.current!.replace(TMP_PREFIX, "");
   const model = modelOf(traj);
   const task = taskOf(traj, name);
   $("empty").hidden = true;
