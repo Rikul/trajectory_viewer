@@ -1,5 +1,7 @@
-import { normalize } from "./formats.js";
-import type { Step, ToolCall, Trajectory } from "./types.js";
+import { normalize } from "./formats.ts";
+import { openReplay } from "./replay.ts";
+import { callText, observationText, toText } from "./text.ts";
+import type { Step, ToolCall, Trajectory } from "./types.ts";
 
 type Kind = "user" | "done" | "error" | "warn" | "plain";
 type Filter = "all" | "issues" | "errors" | "warnings";
@@ -51,20 +53,6 @@ function highlighted(text: string): DocumentFragment {
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-/** Flatten strings, content-part arrays ({type:"text", text}) or arbitrary JSON into display text. */
-function toText(v: unknown): string {
-  if (v == null) return "";
-  if (typeof v === "string") return v;
-  if (Array.isArray(v)) return v.map(toText).filter(Boolean).join("\n");
-  if (typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (typeof o.text === "string") return o.text;
-    if (o.type === "image" || o.type === "image_url") return "[image]";
-    return JSON.stringify(v, null, 2);
-  }
-  return String(v);
-}
-
 // ---- Trajectory analysis ----
 
 // terminus-style feedback the harness sends back after a malformed response
@@ -75,10 +63,6 @@ function isCompleteCall(c: ToolCall): boolean {
   if (/task_complete|mark_complete|^(submit|finish)$/i.test(c.function_name ?? "")) return true;
   const a = c.arguments as Record<string, unknown> | null;
   return !!a && typeof a === "object" && (a.task_complete === true || a.is_task_complete === true);
-}
-
-function observationText(s: Step): string {
-  return (s.observation?.results ?? []).map((r) => toText(r.content)).join("\n");
 }
 
 function analyze(traj: Trajectory): ViewStep[] {
@@ -370,17 +354,45 @@ function renderSteps(): void {
   if (!visible.length) container.append(el("div", "empty", "No steps match."));
 }
 
+/** Role label for a step: "task prompt", "user", "system prompt" or the short model name. */
+function roleOf(v: ViewStep): string {
+  const s = v.step;
+  if (s.source === "user") return state.steps.find((x) => x.step.source === "user") === v ? "task prompt" : "user";
+  if (s.source === "agent") return (s.model_name ?? state.traj?.agent?.model_name ?? "agent").split("/").pop()!;
+  return s.source === "system" ? "system prompt" : (s.source ?? "step");
+}
+
+/** Error / warning / completion badges (text + CSS class). */
+function statusBadges(v: ViewStep): { text: string; cls: string }[] {
+  return [
+    v.isError && { text: v.labels.error, cls: "error" },
+    v.isWarning && { text: v.labels.warning, cls: "warn" },
+    v.isComplete && { text: v.labels.complete, cls: "done" },
+  ].filter((b): b is { text: string; cls: string } => !!b);
+}
+
+function startReplay(startStep = 0): void {
+  if (!state.traj || !state.current) return;
+  openReplay({
+    title: taskOf(state.traj, state.current.replace(TMP_PREFIX, "")),
+    startStep,
+    steps: state.steps.map((v) => ({
+      step: v.step,
+      tone: v.isError ? "error" : v.isWarning ? "warn" : v.isComplete ? "done" : undefined,
+      role: roleOf(v),
+      badges: statusBadges(v),
+    })),
+  });
+}
+
 function renderStep(v: ViewStep): HTMLElement {
   const s = v.step;
   const box = el("div", `step k-${v.kind}`);
-  const badges: HTMLElement[] = [];
-  if (s.source === "user")
-    badges.push(el("span", "badge user", state.steps.find((x) => x.step.source === "user") === v ? "task prompt" : "user"));
-  else if (s.source === "agent") badges.push(el("span", "badge", (s.model_name ?? state.traj?.agent?.model_name ?? "agent").split("/").pop()!));
-  else badges.push(el("span", "badge", s.source === "system" ? "system prompt" : (s.source ?? "step")));
-  if (v.isError) badges.push(el("span", "badge error", v.labels.error));
-  if (v.isWarning) badges.push(el("span", "badge warn", v.labels.warning));
-  if (v.isComplete) badges.push(el("span", "badge done", v.labels.complete));
+  const role = roleOf(v);
+  const badges: HTMLElement[] = [
+    el("span", s.source === "user" ? "badge user" : "badge", role),
+    ...statusBadges(v).map((b) => el("span", `badge ${b.cls}`, b.text)),
+  ];
 
   const stats: string[] = [];
   const nCalls = s.tool_calls?.length ?? 0;
@@ -436,10 +448,7 @@ function renderBody(v: ViewStep): HTMLElement[] {
       const title = el("div", "call-name", c.function_name ?? "call");
       if (args && typeof args === "object" && typeof args.duration === "number")
         title.append(el("span", "muted", `  (wait ${args.duration}s)`));
-      let content: string;
-      if (args && typeof args === "object" && typeof args.keystrokes === "string") content = args.keystrokes;
-      else if (args && typeof args === "object" && typeof args.command === "string") content = args.command;
-      else content = args == null || (typeof args === "object" && !Object.keys(args).length) ? "" : toText(args);
+      const content = callText(c);
       return el("div", "call", title, content ? pre(content) : null);
     });
     out.push(section("Tool calls", ...calls));
@@ -462,7 +471,9 @@ function renderBody(v: ViewStep): HTMLElement[] {
     m?.cost_usd != null && `cost $${m.cost_usd.toFixed(4)}`,
     ...(s.details ?? []),
   ].filter(Boolean);
-  if (metaBits.length) out.push(el("div", "sec muted small", metaBits.join(" · ")));
+  const replayHere = el("button", "link-btn", "▶ Replay from here");
+  replayHere.addEventListener("click", () => startReplay(v.index));
+  out.push(el("div", "sec muted small step-foot", metaBits.length ? metaBits.join(" · ") : null, replayHere));
   if (s.extra && Object.keys(s.extra).length) out.push(section("Extra", pre(JSON.stringify(s.extra, null, 2))));
   return out;
 }
@@ -485,6 +496,8 @@ $<HTMLInputElement>("search").addEventListener("input", (e) => {
     renderSteps();
   }, 150);
 });
+
+$("replay-btn").addEventListener("click", () => startReplay());
 
 $("expand-all").addEventListener("click", () => {
   state.steps.forEach((v) => state.open.add(v.index));

@@ -1,4 +1,4 @@
-import type { Step, ToolCall, Trajectory } from "./types.js";
+import type { Step, ToolCall, Trajectory } from "./types.ts";
 
 // Converters from other trajectory formats into the viewer's (ATIF-shaped) model.
 // Supported: ATIF, chat logs (OpenAI messages + llm_calls), Anthropic Messages content blocks,
