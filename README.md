@@ -17,6 +17,21 @@ A minimal viewer for agent trajectories. Supported formats (detected automatical
   (marked *temp* in the list).
 - Click a trajectory to view it: header with model / harness / token totals, plus one collapsible row per step.
 - Filter by **All / Warnings + errors / Errors only / Warnings only**, search across messages, commands and outputs, and **Expand all / Collapse all**.
+- **▶ Replay** plays the trajectory back as an animated conversation: prompts appear, the agent's reasoning and
+  messages type out, tool calls and their output follow, step by step. Pause / resume, jump between steps,
+  scrub the timeline (error / warning / completion steps are marked on it) and change speed (0.5×–8×, remembered).
+  Each expanded step also has **Replay from here**. When steps have timestamps, the pause between steps follows
+  the real gap (20× faster, capped at 2.5 s) and the header shows the run time.
+
+  | Key | Action |
+  |---|---|
+  | Space / K | play / pause |
+  | ← / → | previous / next step |
+  | Home / End | start / end |
+  | + / − | faster / slower |
+  | Esc | close |
+
+  With *reduce motion* enabled in the OS, text appears whole instead of being typed out.
 
 ## Run
 
@@ -38,6 +53,8 @@ npm test   # build + typecheck + node:test; needs Node >= 22.18, which runs the 
 
 - `tests/formats.test.ts` — one fixture per supported format in `tests/fixtures/`, checking step mapping, tool
   calls / observations, metrics and error / warning / completion flags.
+- `tests/replay-timeline.test.ts` — replay timing: segment order, durations, real-time gaps, seeking helpers, and a
+  timeline for every fixture.
 - `tests/fuzz.test.ts` — seeded fuzz (20k random inputs) plus known-awkward shapes: `normalize()` must never throw.
 - `tests/server.test.ts` — starts the server on a random port with a temp directory: upload / list / read / delete,
   duplicate and concurrent same-name uploads, 413 for oversized bodies, path traversal, loopback binding, and a
@@ -53,6 +70,8 @@ push to `main`.
   - `POST /api/trajectories?name=<file>.json` — upload (raw JSON body; name collisions get a `-N` suffix)
   - `GET|DELETE /api/trajectories/<file>.json`
 - `src/client/app.ts` — client-side TypeScript, compiled to plain browser JS
+- `src/client/replay-timeline.ts` — turns a trajectory into a timed script (pure, unit-tested);
+  `src/client/replay.ts` — the replay window (`<dialog>` + `requestAnimationFrame` player)
 - `src/client/formats.ts` — converts supported formats into the viewer's ATIF-shaped model (`src/client/types.ts`)
 - `public/` — `index.html`, `styles.css`
 
