@@ -3,7 +3,8 @@
 import { callText, toText } from "./text.ts";
 import type { Step } from "./types.ts";
 
-export type SegmentKind = "system" | "user" | "reasoning" | "message" | "call" | "output";
+/** "note" is a placeholder for a step with nothing to show, so its turn (and badges) still appear. */
+export type SegmentKind = "system" | "user" | "reasoning" | "message" | "call" | "output" | "note";
 export type Tone = "error" | "warn" | "done" | undefined;
 
 /** One piece of the replay that is revealed over [start, start + duration) in replay milliseconds. */
@@ -45,6 +46,7 @@ const SPEED: Record<SegmentKind, { cps: number; min: number; max: number }> = {
   message: { cps: 90, min: 400, max: 5000 },
   call: { cps: 45, min: 350, max: 2500 },
   output: { cps: 900, min: 250, max: 1500 },
+  note: { cps: 2000, min: 300, max: 300 },
 };
 const SEGMENT_GAP = 220; // pause between parts of one step
 const STEP_GAP = 450; // default pause between steps
@@ -72,11 +74,12 @@ export function buildTimeline(input: ReplayStepInput[]): Timeline {
   input.forEach(({ step, tone }, i) => {
     const time = timeOf(step);
     if (i > 0) {
-      // Pause before the step: compressed real gap when both timestamps exist, else a fixed beat.
+      // Pause before the step: compressed real gap when this step and the one right before it both have
+      // timestamps, else a fixed beat (a gap across an untimed step would cover more than one step).
       const real = time != null && prevTime != null ? time - prevTime : undefined;
       t += real != null && real > 0 ? Math.min(MAX_STEP_GAP, Math.max(STEP_GAP, real * REAL_GAP_SCALE)) : STEP_GAP;
     }
-    if (time != null) prevTime = time;
+    prevTime = time;
 
     const start = t;
     const add = (kind: SegmentKind, text: string, extra: Partial<Segment> = {}) => {
@@ -94,6 +97,7 @@ export function buildTimeline(input: ReplayStepInput[]): Timeline {
       for (const c of step.tool_calls ?? []) add("call", callText(c) || "(no arguments)", { label: c.function_name ?? "call" });
       for (const r of step.observation?.results ?? []) add("output", toText(r.content) || "(empty)", { tone });
       if (step.error != null) add("output", toText(step.error), { tone: "error" });
+      if (!segments.length || segments[segments.length - 1].step !== i) add("note", "(no message, tool calls or output in this step)");
     } else {
       add(step.source === "user" ? "user" : "system", message || toText(step.extra) || "(empty)");
     }

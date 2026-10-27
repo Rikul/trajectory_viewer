@@ -121,6 +121,8 @@ const state = {
   /** Key of the open trajectory: its file name, or `tmp/<name>` for an unsaved upload. */
   current: null as string | null,
   traj: null as Trajectory | null,
+  /** Key whose data is in `traj` / `steps`; differs from `current` while a newly selected file is loading. */
+  loaded: null as string | null,
   steps: [] as ViewStep[],
   open: new Set<number>(),
   filter: "all" as Filter,
@@ -282,6 +284,7 @@ async function loadFromHash(seq: number): Promise<void> {
   }
   if (!traj) return showError(`${name} isn't a recognised trajectory (expected ATIF "steps" or a chat log with "messages").`);
   state.traj = traj;
+  state.loaded = name;
   state.steps = analyze(traj);
   state.open.clear();
   renderTrajectory();
@@ -372,7 +375,8 @@ function statusBadges(v: ViewStep): { text: string; cls: string }[] {
 }
 
 function startReplay(startStep = 0): void {
-  if (!state.traj || !state.current) return;
+  // Only replay what's on screen for the current selection, never a previous file while a new one loads.
+  if (!state.traj || !state.current || state.loaded !== state.current) return;
   openReplay({
     title: taskOf(state.traj, state.current.replace(TMP_PREFIX, "")),
     startStep,

@@ -154,8 +154,8 @@ mark { background: #fde68a; padding: 0; }
   --rp-line: #2a2f3a;
   --rp-accent: #7aa2ff;
 
-  width: min(1100px, 100vw - 32px);
-  height: min(880px, 100dvh - 32px);
+  width: min(1100px, 100vw - 16px);
+  height: min(880px, 100dvh - 16px);
   max-width: none;
   max-height: none;
   padding: 0;
@@ -284,6 +284,7 @@ mark { background: #fde68a; padding: 0; }
 .rp-user, .rp-message, .rp-system { font-size: 14px; line-height: 1.55; text-wrap: pretty; }
 .rp-system { color: var(--rp-dim); font-size: 12.5px; max-height: 8lh; overflow: auto; }
 .rp-user { max-height: 14lh; overflow: auto; }
+.rp-note { color: var(--rp-dim); font-size: 12.5px; font-style: italic; }
 .rp-reasoning {
   color: var(--rp-dim);
   font-style: italic;
@@ -414,10 +415,16 @@ mark { background: #fde68a; padding: 0; }
 }
 
 /* Narrow windows: stack the scrubber on its own row. */
+/* Narrow windows: scrubber on its own row, the rest wraps instead of overflowing. */
 @container replay (width < 640px) {
-  .rp-controls { grid-template-columns: auto 1fr auto; }
-  .rp-track { grid-column: 1 / -1; grid-row: 1; }
-  .rp-time { justify-self: end; }
+  .rp-controls { display: flex; flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; }
+  .rp-track { order: -1; flex: 1 0 100%; }
+  .rp-time { margin-left: auto; }
+}
+@container replay (width < 360px) {
+  .rp-buttons { gap: 4px; }
+  .rp-btn { min-width: 30px; height: 30px; padding: 0 4px; }
+  .rp-play { min-width: 38px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

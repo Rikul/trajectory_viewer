@@ -65,6 +65,12 @@ describe("buildTimeline", () => {
     assert.equal(tl.steps[3].end, tl.total);
   });
 
+  it("gives an agent step with nothing to show a placeholder, so its turn still appears", () => {
+    const tl = buildTimeline([{ step: { source: "agent", metrics: { prompt_tokens: 5 } }, tone: "warn" }]);
+    assert.deepEqual(tl.segments.map((s) => [s.step, s.kind]), [[0, "note"]]);
+    assert.equal(tl.steps[0].tone, "warn");
+  });
+
   it("is empty for no steps", () => {
     assert.deepEqual(buildTimeline([]), { segments: [], steps: [], total: 0 });
   });
@@ -86,6 +92,18 @@ describe("timing", () => {
     const gaps = tl.steps.slice(1).map((s, i) => s.start - tl.steps[i].end);
     assert.deepEqual(gaps, [1000, 2500, 450]); // 20 s × 0.05, capped hour, floor for 1 s
     assert.deepEqual(tl.steps.map((s) => s.realOffset), [0, 20_000, 3_600_000, 3_601_000]);
+  });
+
+  it("only uses real gaps between adjacent timestamped steps", () => {
+    const tl = buildTimeline(
+      steps(
+        { source: "agent", message: "x", timestamp: "2026-01-01T00:00:00Z" },
+        { source: "user", message: "untimed" },
+        { source: "agent", message: "y", timestamp: "2026-01-01T00:00:40Z" },
+      ),
+    );
+    const gaps = tl.steps.slice(1).map((s, i) => s.start - tl.steps[i].end);
+    assert.deepEqual(gaps, [450, 450]); // not 40 s × 0.05 = 2 s across the untimed step
   });
 
   it("uses a fixed beat when there are no timestamps", () => {

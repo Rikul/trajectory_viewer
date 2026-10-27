@@ -179,7 +179,9 @@ class ReplayPlayer {
 
   #tick = (now: number): void => {
     if (!this.#playing) return;
-    const dt = Math.min(250, now - this.#lastFrame); // a backgrounded tab shouldn't jump ahead on return
+    // Clamp: the first frame's timestamp can precede the performance.now() taken in play() (negative dt),
+    // and a backgrounded tab shouldn't jump ahead on return.
+    const dt = Math.max(0, Math.min(250, now - this.#lastFrame));
     this.#lastFrame = now;
     this.#t = Math.min(this.#tl.total, this.#t + dt * this.#speed);
     this.#render();
@@ -188,7 +190,10 @@ class ReplayPlayer {
   };
 
   #seek(t: number): void {
-    this.#t = Math.min(this.#tl.total, Math.max(0, t));
+    t = Math.min(this.#tl.total, Math.max(0, t));
+    // Going back can land inside a segment that already finished typing; rebuild so it re-types from there.
+    if (t < this.#t) this.#reset();
+    this.#t = t;
     this.#follow = true;
     this.#render();
   }
@@ -217,7 +222,7 @@ class ReplayPlayer {
   #render(): void {
     const t = this.#t;
     const n = startedCount(this.#tl, t);
-    if (n < this.#rendered) this.#reset(); // seeking backwards: rebuild from scratch
+    if (n < this.#rendered) this.#reset(); // defensive: never leave mounted segments for a time before them
     for (let i = this.#rendered; i < n; i++) this.#mount(i);
     this.#rendered = n;
 
@@ -291,6 +296,9 @@ class ReplayPlayer {
       case "output":
         node = h("pre", { className: `rp-seg rp-output${seg.tone ? ` t-${seg.tone}` : ""}` }, text);
         break;
+      case "note":
+        node = h("div", { className: "rp-seg rp-note" }, text);
+        break;
       case "reasoning":
         node = h("div", { className: "rp-seg rp-reasoning" }, h("span", { className: "rp-kicker" }, "thinking"), text);
         break;
@@ -308,10 +316,17 @@ class ReplayPlayer {
     const { signal } = this.#ac;
     const d = this.dialog;
 
+    // Backdrop click (for browsers without closedby): only when the press also started on the backdrop,
+    // so a scrub or text selection released outside the window doesn't close it.
+    let downOnBackdrop = false;
+    d.addEventListener("pointerdown", (e) => (downOnBackdrop = e.target === d), { signal });
     d.addEventListener(
       "click",
       (e) => {
-        if (e.target === d) return d.close(); // backdrop click (browsers without closedby)
+        if (e.target === d) {
+          if (downOnBackdrop) d.close();
+          return;
+        }
         const act = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act;
         if (act === "close") d.close();
         else if (act === "toggle") this.toggle();
@@ -337,7 +352,9 @@ class ReplayPlayer {
     this.#jump.addEventListener("click", () => {
       this.#follow = true;
       this.#jump.hidden = true;
-      this.#stage.scrollTo({ top: this.#stage.scrollHeight, behavior: this.#reduceMotion ? "instant" : "smooth" });
+      // Jump rather than smooth-scroll: intermediate scroll events of a smooth scroll would read as the user
+      // scrolling away while new turns keep growing the feed, and switch following off again.
+      this.#stage.scrollTop = this.#stage.scrollHeight;
     }, { signal });
 
     d.addEventListener(
@@ -345,6 +362,9 @@ class ReplayPlayer {
       (e) => {
         const target = e.target as HTMLElement;
         const inControl = target.matches("button, select, input");
+        // The speed selector and the slider handle arrows / Home / End themselves.
+        const nativeNav = target.matches("select, input") && /^(Arrow|Home$|End$)/.test(e.key);
+        if (nativeNav) return;
         const step = SPEEDS.indexOf(this.#speed);
         switch (e.key) {
           case " ":
@@ -354,7 +374,6 @@ class ReplayPlayer {
             break;
           case "ArrowLeft":
           case "ArrowRight":
-            if (target === this.#scrub) return; // the slider moves itself
             this.#seek(neighbourStepStart(this.#tl, this.#t, e.key === "ArrowLeft" ? -1 : 1));
             break;
           case "Home":
@@ -383,7 +402,8 @@ class ReplayPlayer {
       () => {
         this.pause();
         this.#ac.abort();
-        d.remove();
+        // Leave the dialog in the DOM long enough for its closing transition (0.2s in styles.css).
+        setTimeout(() => d.remove(), this.#reduceMotion ? 0 : 250);
       },
       { signal },
     );
